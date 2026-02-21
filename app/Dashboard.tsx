@@ -221,11 +221,12 @@ export default function Dashboard() {
   const nftCountHuman = useMemo(() => fmtInt(nftBal as bigint), [nftBal])
 
   const multiplierHuman = useMemo(() => {
-    const mBig = (multiplier BigInt(0)) as bigint
-    if (!mBig) return '—'
-    const mStr = (Number(mBig) / 10000).toFixed(2) // 10000..15000 range
-    return `${mStr}x (${mBig.toString()})`
-  }, [multiplier])
+  const mBig = (multiplier ?? BigInt(0)) as bigint
+  if (!mBig) return '—'
+
+  const mStr = (Number(mBig) / 10000).toFixed(2)
+  return `${mStr}x (${mBig.toString()})`
+}, [multiplier])
 
   const hasAllowance = useMemo(() => {
     try {
