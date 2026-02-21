@@ -8,12 +8,16 @@ import {
   useReadContract,
   useWriteContract,
   useWaitForTransactionReceipt,
+  useChainId,
+  useSwitchChain,
 } from 'wagmi'
 import { injected } from 'wagmi/connectors'
 import { formatUnits, parseAbi, parseUnits } from 'viem'
 import { TOKEN_ADDRESS, NFT_ADDRESS, STAKING_ADDRESS } from '@/lib/constants'
 
-const EXPLORER = 'https://explorer.testnet.chain.robinhood.com'
+const REQUIRED_CHAIN_ID = 46630
+const REQUIRED_CHAIN_NAME = 'Robinhood Testnet'
+const EXPLORER = 'https://explorer.testnet.rbhscan.io'
 
 const erc20Abi = parseAbi([
   'function balanceOf(address) view returns (uint256)',
@@ -22,7 +26,9 @@ const erc20Abi = parseAbi([
   'function decimals() view returns (uint8)',
 ])
 
-const erc721Abi = parseAbi(['function balanceOf(address) view returns (uint256)'])
+const erc721Abi = parseAbi([
+  'function balanceOf(address) view returns (uint256)',
+])
 
 const stakingAbi = parseAbi([
   'function userInfo(address) view returns (uint256 amount, uint256 rewardDebt)',
@@ -34,123 +40,25 @@ const stakingAbi = parseAbi([
   'function claim()',
 ])
 
-function shortAddr(a: string) {
-  return `${a.slice(0, 6)}…${a.slice(-4)}`
-}
-
-async function copyToClipboard(text: string) {
-  try {
-    await navigator.clipboard.writeText(text)
-    alert('Copied!')
-  } catch {
-    alert('Copy failed')
-  }
-}
-
-function Card({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div
-      style={{
-        border: '1px solid rgba(0,0,0,0.1)',
-        borderRadius: 14,
-        padding: 16,
-        background: 'white',
-      }}
-    >
-      <div style={{ fontWeight: 700, marginBottom: 10 }}>{title}</div>
-      {children}
-    </div>
-  )
-}
-
-function Button(props: React.ButtonHTMLAttributes<HTMLButtonElement>) {
-  const { disabled } = props
-  return (
-    <button
-      {...props}
-      style={{
-        padding: '10px 12px',
-        borderRadius: 12,
-        border: '1px solid rgba(0,0,0,0.12)',
-        background: disabled ? 'rgba(0,0,0,0.04)' : 'black',
-        color: disabled ? 'rgba(0,0,0,0.45)' : 'white',
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        fontWeight: 700,
-      }}
-    />
-  )
-}
-
-function LinkBtn({ href, label }: { href: string; label: string }) {
-  return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noreferrer"
-      style={{
-        padding: '6px 10px',
-        borderRadius: 999,
-        border: '1px solid rgba(0,0,0,0.12)',
-        textDecoration: 'none',
-        color: 'black',
-        fontWeight: 700,
-        fontSize: 12,
-      }}
-    >
-      {label}
-    </a>
-  )
-}
-
-function MiniBtn({ onClick, label }: { onClick: () => void; label: string }) {
-  return (
-    <button
-      onClick={onClick}
-      style={{
-        padding: '6px 10px',
-        borderRadius: 999,
-        border: '1px solid rgba(0,0,0,0.12)',
-        background: 'white',
-        cursor: 'pointer',
-        fontWeight: 700,
-        fontSize: 12,
-      }}
-    >
-      {label}
-    </button>
-  )
-}
-
-function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
-  return (
-    <input
-      {...props}
-      style={{
-        width: '100%',
-        padding: '10px 12px',
-        borderRadius: 12,
-        border: '1px solid rgba(0,0,0,0.12)',
-        outline: 'none',
-      }}
-    />
-  )
-}
-
 export default function Dashboard() {
   const { address, isConnected } = useAccount()
-  const { connect, isPending: isConnecting } = useConnect()
+  const { connect } = useConnect()
   const { disconnect } = useDisconnect()
+  const chainId = useChainId()
+  const { switchChain } = useSwitchChain()
+
+  const isRightNetwork = chainId === REQUIRED_CHAIN_ID
+  const enabled = isConnected && typeof address === 'string' && isRightNetwork
 
   const [stakeAmt, setStakeAmt] = useState('10')
   const [unstakeAmt, setUnstakeAmt] = useState('1')
-
-  const enabled = isConnected && typeof address === 'string'
 
   const { data: decimalsData } = useReadContract({
     address: TOKEN_ADDRESS as `0x${string}`,
     abi: erc20Abi,
     functionName: 'decimals',
   })
+
   const decimals = Number(decimalsData ?? 18)
 
   const { data: tokenBal } = useReadContract({
@@ -158,7 +66,7 @@ export default function Dashboard() {
     abi: erc20Abi,
     functionName: 'balanceOf',
     args: enabled ? [address!] : undefined,
-    query: { enabled, refetchInterval: 5000 },
+    query: { enabled },
   })
 
   const { data: nftBal } = useReadContract({
@@ -166,7 +74,7 @@ export default function Dashboard() {
     abi: erc721Abi,
     functionName: 'balanceOf',
     args: enabled ? [address!] : undefined,
-    query: { enabled, refetchInterval: 5000 },
+    query: { enabled },
   })
 
   const { data: allowance } = useReadContract({
@@ -174,7 +82,7 @@ export default function Dashboard() {
     abi: erc20Abi,
     functionName: 'allowance',
     args: enabled ? [address!, STAKING_ADDRESS as `0x${string}`] : undefined,
-    query: { enabled, refetchInterval: 5000 },
+    query: { enabled },
   })
 
   const { data: userInfo } = useReadContract({
@@ -182,7 +90,7 @@ export default function Dashboard() {
     abi: stakingAbi,
     functionName: 'userInfo',
     args: enabled ? [address!] : undefined,
-    query: { enabled, refetchInterval: 3000 },
+    query: { enabled },
   })
 
   const { data: pendingBase } = useReadContract({
@@ -206,247 +114,162 @@ export default function Dashboard() {
     abi: stakingAbi,
     functionName: 'getMultiplier',
     args: enabled ? [address!] : undefined,
-    query: { enabled, refetchInterval: 5000 },
+    query: { enabled },
   })
 
   const stakedAmount = (userInfo?.[0] ?? BigInt(0)) as bigint
 
-  const fmt = (v?: bigint) => (v ? formatUnits(v, decimals) : '0')
-  const fmtInt = (v?: bigint) => (v ? v.toString() : '0')
+  const fmt = (v?: bigint) =>
+    v ? Number(formatUnits(v, decimals)).toLocaleString() : '0'
 
   const tokenBalHuman = useMemo(() => fmt(tokenBal as bigint), [tokenBal, decimals])
   const stakedHuman = useMemo(() => fmt(stakedAmount), [stakedAmount, decimals])
   const pendingBaseHuman = useMemo(() => fmt(pendingBase as bigint), [pendingBase, decimals])
   const pendingRewardsHuman = useMemo(() => fmt(pendingRewards as bigint), [pendingRewards, decimals])
-  const nftCountHuman = useMemo(() => fmtInt(nftBal as bigint), [nftBal])
 
   const multiplierHuman = useMemo(() => {
-  const mBig = (multiplier ?? BigInt(0)) as bigint
-  if (!mBig) return '—'
+    const m = Number(multiplier ?? BigInt(0))
+    if (!m) return '—'
+    return `${(m / 10000).toFixed(2)}x (${m})`
+  }, [multiplier])
 
-  const mStr = (Number(mBig) / 10000).toFixed(2)
-  return `${mStr}x (${mBig.toString()})`
-}, [multiplier])
-
- const hasAllowance = useMemo(() => {
-  try {
-    const need = parseUnits(stakeAmt || '0', decimals)
-    return ((allowance ?? BigInt(0)) as bigint) >= need
-  } catch {
-    return false
-  }
-}, [allowance, stakeAmt, decimals])
-
-const { writeContract, data: txHash, isPending: isWriting } = useWriteContract()
-const { isLoading: isMining } = useWaitForTransactionReceipt({ hash: txHash })
-
-const busy = isWriting || isMining
-
-// Max uint256 without bigint literals
-const MAX_UINT256 = (BigInt(1) << BigInt(256)) - BigInt(1)
-
-function approveMax() {
-  writeContract({
-    address: TOKEN_ADDRESS as `0x${string}`,
-    abi: erc20Abi,
-    functionName: 'approve',
-    args: [STAKING_ADDRESS as `0x${string}`, MAX_UINT256],
-  })
-}
-
-function stake() {
-  const amt = parseUnits(stakeAmt || '0', decimals)
-  writeContract({
-    address: STAKING_ADDRESS as `0x${string}`,
-    abi: stakingAbi,
-    functionName: 'stake',
-    args: [amt],
-  })
-}
-
-function unstake() {
-  const amt = parseUnits(unstakeAmt || '0', decimals)
-  writeContract({
-    address: STAKING_ADDRESS as `0x${string}`,
-    abi: stakingAbi,
-    functionName: 'unstake',
-    args: [amt],
-  })
-}
-
-function claim() {
-  writeContract({
-    address: STAKING_ADDRESS as `0x${string}`,
-    abi: stakingAbi,
-    functionName: 'claim',
-    args: [],
-  })
-}
-
-  const shortAddress =
-    typeof address === 'string' ? `${address.slice(0, 6)}…${address.slice(-4)}` : '—'
-
-  const nftCountNum = useMemo(() => {
+  const hasAllowance = useMemo(() => {
     try {
-      return Number((nftBal ?? BigInt(0)).toString())
+      const need = parseUnits(stakeAmt || '0', decimals)
+      return ((allowance ?? BigInt(0)) as bigint) >= need
     } catch {
-      return 0
+      return false
     }
-  }, [nftBal])
+  }, [allowance, stakeAmt, decimals])
+
+  const { writeContract, data: txHash } = useWriteContract()
+  const { isLoading: isMining } = useWaitForTransactionReceipt({ hash: txHash })
+
+  const busy = isMining
+
+  const MAX_UINT256 = (BigInt(1) << BigInt(256)) - BigInt(1)
+
+  function approveMax() {
+    writeContract({
+      address: TOKEN_ADDRESS as `0x${string}`,
+      abi: erc20Abi,
+      functionName: 'approve',
+      args: [STAKING_ADDRESS as `0x${string}`, MAX_UINT256],
+    })
+  }
+
+  function stake() {
+    const amt = parseUnits(stakeAmt || '0', decimals)
+    writeContract({
+      address: STAKING_ADDRESS as `0x${string}`,
+      abi: stakingAbi,
+      functionName: 'stake',
+      args: [amt],
+    })
+  }
+
+  function unstake() {
+    const amt = parseUnits(unstakeAmt || '0', decimals)
+    writeContract({
+      address: STAKING_ADDRESS as `0x${string}`,
+      abi: stakingAbi,
+      functionName: 'unstake',
+      args: [amt],
+    })
+  }
+
+  function claim() {
+    writeContract({
+      address: STAKING_ADDRESS as `0x${string}`,
+      abi: stakingAbi,
+      functionName: 'claim',
+      args: [],
+    })
+  }
 
   return (
-    <div style={{ maxWidth: 980, margin: '0 auto', padding: 28, fontFamily: 'ui-sans-serif, system-ui' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+    <div style={{ maxWidth: 960, margin: '0 auto', padding: 32 }}>
+      <h1>🔥 NFT Boost Staking Dashboard</h1>
+
+      {!isConnected ? (
+        <button onClick={() => connect({ connector: injected() })}>
+          Connect Wallet
+        </button>
+      ) : (
         <div>
-          <div style={{ fontSize: 28, fontWeight: 900 }}>🔥 NFT Boost Staking Dashboard</div>
-
-          <div style={{ opacity: 0.8, marginTop: 10, lineHeight: 1.8 }}>
-            <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-              <span>
-                Token: <code>{shortAddr(TOKEN_ADDRESS)}</code>
-              </span>
-              <MiniBtn onClick={() => copyToClipboard(TOKEN_ADDRESS)} label="Copy" />
-              <LinkBtn href={`${EXPLORER}/token/${TOKEN_ADDRESS}`} label="Explorer" />
-            </div>
-
-            <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-              <span>
-                NFT: <code>{shortAddr(NFT_ADDRESS)}</code>
-              </span>
-              <MiniBtn onClick={() => copyToClipboard(NFT_ADDRESS)} label="Copy" />
-              <LinkBtn href={`${EXPLORER}/token/${NFT_ADDRESS}`} label="Explorer" />
-            </div>
-
-            <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-              <span>
-                Staking V4: <code>{shortAddr(STAKING_ADDRESS)}</code>
-              </span>
-              <MiniBtn onClick={() => copyToClipboard(STAKING_ADDRESS)} label="Copy" />
-              <LinkBtn href={`${EXPLORER}/address/${STAKING_ADDRESS}`} label="Explorer" />
-            </div>
+          <div>
+            {address?.slice(0, 6)}...{address?.slice(-4)}
+            <button onClick={() => disconnect()} style={{ marginLeft: 12 }}>
+              Disconnect
+            </button>
           </div>
+
+          {!isRightNetwork && (
+            <div style={{ marginTop: 12 }}>
+              ⚠️ Wrong Network — Switch to {REQUIRED_CHAIN_NAME}
+              <button
+                onClick={() => switchChain({ chainId: REQUIRED_CHAIN_ID })}
+                style={{ marginLeft: 10 }}
+              >
+                Switch
+              </button>
+            </div>
+          )}
+
+          <hr style={{ margin: '20px 0' }} />
+
+          <div>ERC20 Balance: {tokenBalHuman}</div>
+          <div>NFT Count: {(nftBal ?? BigInt(0)).toString()}</div>
+          <div>Staked: {stakedHuman}</div>
+          <div>Multiplier: {multiplierHuman}</div>
+          <div>Pending Base: {pendingBaseHuman}</div>
+          <div>Pending Boosted: {pendingRewardsHuman}</div>
+
+          <hr style={{ margin: '20px 0' }} />
+
+          <input
+            value={stakeAmt}
+            onChange={(e) => setStakeAmt(e.target.value)}
+          />
+          {!hasAllowance ? (
+            <button onClick={approveMax} disabled={busy}>
+              Approve
+            </button>
+          ) : (
+            <button onClick={stake} disabled={busy}>
+              Stake
+            </button>
+          )}
+
+          <br /><br />
+
+          <input
+            value={unstakeAmt}
+            onChange={(e) => setUnstakeAmt(e.target.value)}
+          />
+          <button onClick={unstake} disabled={busy}>
+            Unstake
+          </button>
+
+          <br /><br />
+
+          <button onClick={claim} disabled={busy}>
+            Claim
+          </button>
+
+          {txHash && (
+            <div style={{ marginTop: 10 }}>
+              Tx:{' '}
+              <a
+                href={`${EXPLORER}/tx/${txHash}`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                {txHash.slice(0, 10)}...{txHash.slice(-8)}
+              </a>
+            </div>
+          )}
         </div>
-
-        {!isConnected ? (
-          <Button disabled={isConnecting} onClick={() => connect({ connector: injected() })}>
-            {isConnecting ? 'Connecting…' : 'Connect Wallet'}
-          </Button>
-        ) : (
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ fontWeight: 700, marginBottom: 8 }}>{shortAddress}</div>
-            <Button onClick={() => disconnect()}>Disconnect</Button>
-          </div>
-        )}
-      </div>
-
-      {enabled && (
-        <>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 14, marginTop: 18 }}>
-            <Card title="Balances">
-              <div>
-                ERC20: <b>{tokenBalHuman}</b>
-              </div>
-              <div style={{ marginTop: 6 }}>
-                NFT count: <b>{nftCountHuman}</b>
-              </div>
-            </Card>
-
-            <Card title="Staking">
-              <div>
-                Staked: <b>{stakedHuman}</b>
-              </div>
-              <div style={{ marginTop: 6 }}>
-                Multiplier: <b>{multiplierHuman}</b>
-              </div>
-
-              <div style={{ marginTop: 10 }}>
-                {nftCountNum > 0 ? (
-                  <span
-                    style={{
-                      padding: '4px 10px',
-                      borderRadius: 999,
-                      background: '#eaffea',
-                      border: '1px solid #b7ffb7',
-                      fontWeight: 700,
-                      fontSize: 12,
-                    }}
-                  >
-                    ✅ Boost Active
-                  </span>
-                ) : (
-                  <span
-                    style={{
-                      padding: '4px 10px',
-                      borderRadius: 999,
-                      background: '#fff3e6',
-                      border: '1px solid #ffd2a6',
-                      fontWeight: 700,
-                      fontSize: 12,
-                    }}
-                  >
-                    ❌ No NFT Boost
-                  </span>
-                )}
-              </div>
-            </Card>
-
-            <Card title="Rewards">
-              <div>
-                Pending base: <b>{pendingBaseHuman}</b>
-              </div>
-              <div style={{ marginTop: 6 }}>
-                Pending boosted: <b>{pendingRewardsHuman}</b>
-              </div>
-            </Card>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 14, marginTop: 14 }}>
-            <Card title="Stake">
-              <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                <div style={{ flex: 1 }}>
-                  <Input value={stakeAmt} onChange={(e) => setStakeAmt(e.target.value)} placeholder="Amount" />
-                </div>
-
-                {!hasAllowance ? (
-                  <Button disabled={busy} onClick={approveMax}>
-                    {busy ? 'Processing…' : 'Approve'}
-                  </Button>
-                ) : (
-                  <Button disabled={busy} onClick={stake}>
-                    {busy ? 'Processing…' : 'Stake'}
-                  </Button>
-                )}
-              </div>
-
-              <div style={{ opacity: 0.7, marginTop: 10, fontSize: 12 }}>
-                Tip: Approve sekali (max), habis itu stake berkali-kali.
-              </div>
-            </Card>
-
-            <Card title="Claim / Unstake">
-              <div style={{ display: 'flex', gap: 10, marginBottom: 10 }}>
-                <Button disabled={busy} onClick={claim}>
-                  {busy ? 'Processing…' : 'Claim'}
-                </Button>
-              </div>
-
-              <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                <div style={{ flex: 1 }}>
-                  <Input value={unstakeAmt} onChange={(e) => setUnstakeAmt(e.target.value)} placeholder="Amount" />
-                </div>
-                <Button disabled={busy} onClick={unstake}>
-                  {busy ? 'Processing…' : 'Unstake'}
-                </Button>
-              </div>
-
-              {txHash && (
-                <div style={{ marginTop: 10, fontSize: 12, opacity: 0.8 }}>
-                  Tx: <code>{txHash}</code>
-                </div>
-              )}
-            </Card>
-          </div>
-        </>
       )}
     </div>
   )
