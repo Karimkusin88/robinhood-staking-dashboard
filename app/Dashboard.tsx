@@ -228,7 +228,7 @@ export default function Dashboard() {
   return `${mStr}x (${mBig.toString()})`
 }, [multiplier])
 
-  const hasAllowance = useMemo(() => {
+ const hasAllowance = useMemo(() => {
   try {
     const need = parseUnits(stakeAmt || '0', decimals)
     return ((allowance ?? BigInt(0)) as bigint) >= need
@@ -237,12 +237,15 @@ export default function Dashboard() {
   }
 }, [allowance, stakeAmt, decimals])
 
-  const { writeContract, data: txHash, isPending: isWriting } = useWriteContract()
-  const { isLoading: isMining } = useWaitForTransactionReceipt({ hash: txHash })
-  const busy = isWriting || isMining
-  const MAX_UINT256 = (BigInt(1) << BigInt(256)) - BigInt(1),
-  
-  function approveMax() {
+const { writeContract, data: txHash, isPending: isWriting } = useWriteContract()
+const { isLoading: isMining } = useWaitForTransactionReceipt({ hash: txHash })
+
+const busy = isWriting || isMining
+
+// Max uint256 without bigint literals
+const MAX_UINT256 = (BigInt(1) << BigInt(256)) - BigInt(1)
+
+function approveMax() {
   writeContract({
     address: TOKEN_ADDRESS as `0x${string}`,
     abi: erc20Abi,
@@ -251,34 +254,34 @@ export default function Dashboard() {
   })
 }
 
-  function stake() {
-    const amt = parseUnits(stakeAmt || '0', decimals)
-    writeContract({
-      address: STAKING_ADDRESS as `0x${string}`,
-      abi: stakingAbi,
-      functionName: 'stake',
-      args: [amt],
-    })
-  }
+function stake() {
+  const amt = parseUnits(stakeAmt || '0', decimals)
+  writeContract({
+    address: STAKING_ADDRESS as `0x${string}`,
+    abi: stakingAbi,
+    functionName: 'stake',
+    args: [amt],
+  })
+}
 
-  function unstake() {
-    const amt = parseUnits(unstakeAmt || '0', decimals)
-    writeContract({
-      address: STAKING_ADDRESS as `0x${string}`,
-      abi: stakingAbi,
-      functionName: 'unstake',
-      args: [amt],
-    })
-  }
+function unstake() {
+  const amt = parseUnits(unstakeAmt || '0', decimals)
+  writeContract({
+    address: STAKING_ADDRESS as `0x${string}`,
+    abi: stakingAbi,
+    functionName: 'unstake',
+    args: [amt],
+  })
+}
 
-  function claim() {
-    writeContract({
-      address: STAKING_ADDRESS as `0x${string}`,
-      abi: stakingAbi,
-      functionName: 'claim',
-      args: [],
-    })
-  }
+function claim() {
+  writeContract({
+    address: STAKING_ADDRESS as `0x${string}`,
+    abi: stakingAbi,
+    functionName: 'claim',
+    args: [],
+  })
+}
 
   const shortAddress =
     typeof address === 'string' ? `${address.slice(0, 6)}…${address.slice(-4)}` : '—'
