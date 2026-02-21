@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import Link from 'next/link'
 import {
   useAccount,
   useConnect,
@@ -13,12 +14,17 @@ import {
 } from 'wagmi'
 import { injected } from 'wagmi/connectors'
 import { formatUnits, parseAbi, parseUnits } from 'viem'
-import toast from 'react-hot-toast'
 import { TOKEN_ADDRESS, NFT_ADDRESS, STAKING_ADDRESS } from '@/lib/constants'
 
+/**
+ * NOTE:
+ * - REQUIRED_CHAIN_ID harus sama dengan Robinhood testnet chainId lu.
+ * - Di log hardhat lu chainId = 46630 (0xb636)
+ */
 const REQUIRED_CHAIN_ID = 46630
-const REQUIRED_CHAIN_NAME = 'Robinhood Testnet'
-const EXPLORER = 'https://explorer.testnet.rbhscan.io'
+
+const EXPLORER_TX = 'https://explorer.testnet.chain.robinhood.com/tx/'
+const EXPLORER_ADDR = 'https://explorer.testnet.chain.robinhood.com/address/'
 
 const erc20Abi = parseAbi([
   'function balanceOf(address) view returns (uint256)',
@@ -39,73 +45,45 @@ const stakingAbi = parseAbi([
   'function claim()',
 ])
 
-function shortAddr(a?: string) {
-  if (!a) return '—'
-  return `${a.slice(0, 6)}…${a.slice(-4)}`
-}
-
-function copy(text: string) {
-  navigator.clipboard.writeText(text)
-  toast.success('Copied!')
-}
-
-function openExplorer(type: 'address' | 'tx', hash: string) {
-  const url = type === 'tx' ? `${EXPLORER}/tx/${hash}` : `${EXPLORER}/address/${hash}`
-  window.open(url, '_blank', 'noreferrer')
-}
-
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div
       style={{
-        border: '1px solid rgba(0,0,0,0.08)',
+        border: '1px solid rgba(255,255,255,0.12)',
         borderRadius: 18,
         padding: 16,
-        background: 'white',
-        boxShadow: '0 16px 40px rgba(0,0,0,0.06)',
+        background: 'rgba(255,255,255,0.05)',
+        boxShadow: '0 10px 30px rgba(0,0,0,0.25)',
       }}
     >
-      <div style={{ fontWeight: 950, marginBottom: 10, letterSpacing: -0.2 }}>{title}</div>
+      <div style={{ fontWeight: 900, marginBottom: 10 }}>{title}</div>
       {children}
     </div>
   )
 }
 
-function Button(props: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'ghost' | 'danger' }) {
-  const { disabled, variant = 'primary', style, ...rest } = props
+function Button(props: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'ghost' }) {
+  const { disabled, variant = 'primary' } = props
   const bg =
-    disabled
-      ? 'rgba(0,0,0,0.06)'
-      : variant === 'primary'
-      ? 'black'
-      : variant === 'danger'
-      ? '#ef4444'
-      : 'white'
-  const fg = disabled ? 'rgba(0,0,0,0.45)' : variant === 'ghost' ? 'black' : 'white'
-  const border = '1px solid rgba(0,0,0,0.12)'
+    variant === 'primary'
+      ? disabled
+        ? 'rgba(255,255,255,0.10)'
+        : 'white'
+      : 'transparent'
+  const color = variant === 'primary' ? (disabled ? 'rgba(255,255,255,0.55)' : 'black') : 'white'
+  const border = variant === 'primary' ? '1px solid rgba(255,255,255,0.12)' : '1px solid rgba(255,255,255,0.18)'
 
   return (
     <button
-      {...rest}
-      disabled={disabled}
+      {...props}
       style={{
         padding: '10px 12px',
-        borderRadius: 12,
+        borderRadius: 14,
         border,
         background: bg,
-        color: fg,
+        color,
         cursor: disabled ? 'not-allowed' : 'pointer',
-        fontWeight: 950,
-        transition: 'transform .15s ease, box-shadow .15s ease',
-        boxShadow: disabled ? 'none' : '0 10px 24px rgba(0,0,0,0.10)',
-        ...style,
-      }}
-      onMouseEnter={(e) => {
-        if (disabled) return
-        ;(e.currentTarget.style.transform as any) = 'translateY(-1px)'
-      }}
-      onMouseLeave={(e) => {
-        ;(e.currentTarget.style.transform as any) = 'translateY(0px)'
+        fontWeight: 900,
       }}
     />
   )
@@ -118,68 +96,63 @@ function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
       style={{
         width: '100%',
         padding: '10px 12px',
-        borderRadius: 12,
-        border: '1px solid rgba(0,0,0,0.12)',
+        borderRadius: 14,
+        border: '1px solid rgba(255,255,255,0.16)',
+        background: 'rgba(0,0,0,0.25)',
+        color: 'white',
         outline: 'none',
       }}
     />
   )
 }
 
-/** Smooth number animation */
-function useAnimatedNumber(target: number, durationMs = 600) {
-  const [val, setVal] = useState(target)
-  const fromRef = useRef(target)
-  const rafRef = useRef<number | null>(null)
-
-  useEffect(() => {
-    const from = fromRef.current
-    const to = target
-    if (!Number.isFinite(to)) return
-    if (from === to) return
-
-    const t0 = performance.now()
-    const diff = to - from
-
-    const tick = (t: number) => {
-      const p = Math.min(1, (t - t0) / durationMs)
-      const e = 1 - Math.pow(1 - p, 3) // easeOutCubic
-      setVal(from + diff * e)
-      if (p < 1) rafRef.current = requestAnimationFrame(tick)
-      else fromRef.current = to
-    }
-
-    if (rafRef.current) cancelAnimationFrame(rafRef.current)
-    rafRef.current = requestAnimationFrame(tick)
-
-    return () => {
-      if (rafRef.current) cancelAnimationFrame(rafRef.current)
-    }
-  }, [target, durationMs])
-
-  return val
+function clamp(n: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, n))
 }
 
-/** Demo mode data (when not connected) */
-const DEMO = {
-  wallet: '0xDEMO...BEEF',
-  token: 12345.6789,
-  nftCount: 1,
-  staked: 10,
-  multiplier: '1.10x (11000)',
-  pendingBase: 0.042,
-  pendingBoosted: 0.046,
+// animasi angka halus (tanpa library)
+function useAnimatedNumber(target: number, ms = 550) {
+  const [value, setValue] = useState(target)
+  const raf = useRef<number | null>(null)
+  const startRef = useRef(0)
+  const fromRef = useRef(target)
+
+  useEffect(() => {
+    if (!Number.isFinite(target)) return
+    const from = value
+    fromRef.current = from
+    startRef.current = performance.now()
+
+    const tick = (t: number) => {
+      const p = clamp((t - startRef.current) / ms, 0, 1)
+      const eased = 1 - Math.pow(1 - p, 3)
+      const next = fromRef.current + (target - fromRef.current) * eased
+      setValue(next)
+      if (p < 1) raf.current = requestAnimationFrame(tick)
+    }
+
+    if (raf.current) cancelAnimationFrame(raf.current)
+    raf.current = requestAnimationFrame(tick)
+
+    return () => {
+      if (raf.current) cancelAnimationFrame(raf.current)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [target])
+
+  return value
 }
 
 export default function Dashboard() {
   const { address, isConnected } = useAccount()
   const { connect, isPending: isConnecting } = useConnect()
   const { disconnect } = useDisconnect()
+
   const chainId = useChainId()
   const { switchChain, isPending: isSwitching } = useSwitchChain()
 
   const isRightNetwork = chainId === REQUIRED_CHAIN_ID
-  const enabled = isConnected && typeof address === 'string' && isRightNetwork
+  const enabled = Boolean(isConnected && typeof address === 'string' && isRightNetwork)
 
   const [stakeAmt, setStakeAmt] = useState('10')
   const [unstakeAmt, setUnstakeAmt] = useState('1')
@@ -188,6 +161,7 @@ export default function Dashboard() {
     address: TOKEN_ADDRESS as `0x${string}`,
     abi: erc20Abi,
     functionName: 'decimals',
+    query: { enabled: isConnected && typeof address === 'string' },
   })
   const decimals = Number(decimalsData ?? 18)
 
@@ -195,124 +169,94 @@ export default function Dashboard() {
     address: TOKEN_ADDRESS as `0x${string}`,
     abi: erc20Abi,
     functionName: 'balanceOf',
-    args: enabled ? [address!] : undefined,
-    query: { enabled },
+    args: enabled ? [address as `0x${string}`] : undefined,
+    query: { enabled, refetchInterval: 6000 },
   })
 
   const { data: nftBal } = useReadContract({
     address: NFT_ADDRESS as `0x${string}`,
     abi: erc721Abi,
     functionName: 'balanceOf',
-    args: enabled ? [address!] : undefined,
-    query: { enabled },
+    args: enabled ? [address as `0x${string}`] : undefined,
+    query: { enabled, refetchInterval: 12000 },
   })
 
   const { data: allowance } = useReadContract({
     address: TOKEN_ADDRESS as `0x${string}`,
     abi: erc20Abi,
     functionName: 'allowance',
-    args: enabled ? [address!, STAKING_ADDRESS as `0x${string}`] : undefined,
-    query: { enabled },
+    args: enabled ? [address as `0x${string}`, STAKING_ADDRESS as `0x${string}`] : undefined,
+    query: { enabled, refetchInterval: 6000 },
   })
 
   const { data: userInfo } = useReadContract({
     address: STAKING_ADDRESS as `0x${string}`,
     abi: stakingAbi,
     functionName: 'userInfo',
-    args: enabled ? [address!] : undefined,
-    query: { enabled },
+    args: enabled ? [address as `0x${string}`] : undefined,
+    query: { enabled, refetchInterval: 6000 },
   })
 
   const { data: pendingBase } = useReadContract({
     address: STAKING_ADDRESS as `0x${string}`,
     abi: stakingAbi,
     functionName: 'pendingBase',
-    args: enabled ? [address!] : undefined,
-    query: { enabled, refetchInterval: 3000 },
+    args: enabled ? [address as `0x${string}`] : undefined,
+    query: { enabled, refetchInterval: 2500 },
   })
 
   const { data: pendingRewards } = useReadContract({
     address: STAKING_ADDRESS as `0x${string}`,
     abi: stakingAbi,
     functionName: 'pendingRewards',
-    args: enabled ? [address!] : undefined,
-    query: { enabled, refetchInterval: 3000 },
+    args: enabled ? [address as `0x${string}`] : undefined,
+    query: { enabled, refetchInterval: 2500 },
   })
 
   const { data: multiplier } = useReadContract({
     address: STAKING_ADDRESS as `0x${string}`,
     abi: stakingAbi,
     functionName: 'getMultiplier',
-    args: enabled ? [address!] : undefined,
-    query: { enabled },
+    args: enabled ? [address as `0x${string}`] : undefined,
+    query: { enabled, refetchInterval: 6000 },
   })
 
-  const stakedAmount = (userInfo?.[0] ?? BigInt(0)) as bigint
+  const stakedAmount = (userInfo?.[0] ?? 0n) as bigint
 
-  const fmtNum = (v?: bigint) => {
-    try {
-      return v ? Number(formatUnits(v, decimals)) : 0
-    } catch {
-      return 0
-    }
-  }
+  const fmt = (v?: bigint) => (v ? Number(formatUnits(v, decimals)) : 0)
+  const fmtInt = (v?: bigint) => (v ? Number(v.toString()) : 0)
 
-  const realToken = useMemo(() => fmtNum(tokenBal as bigint), [tokenBal, decimals])
-  const realStaked = useMemo(() => fmtNum(stakedAmount), [stakedAmount, decimals])
-  const realBase = useMemo(() => fmtNum(pendingBase as bigint), [pendingBase, decimals])
-  const realBoosted = useMemo(() => fmtNum(pendingRewards as bigint), [pendingRewards, decimals])
+  const tokenBalNum = useMemo(() => fmt(tokenBal as bigint), [tokenBal, decimals])
+  const stakedNum = useMemo(() => fmt(stakedAmount), [stakedAmount, decimals])
+  const pendingBaseNum = useMemo(() => fmt(pendingBase as bigint), [pendingBase, decimals])
+  const pendingRewardsNum = useMemo(() => fmt(pendingRewards as bigint), [pendingRewards, decimals])
+  const nftCountNum = useMemo(() => fmtInt(nftBal as bigint), [nftBal])
+
+  const pendingBaseAnim = useAnimatedNumber(pendingBaseNum, 650)
+  const pendingRewardsAnim = useAnimatedNumber(pendingRewardsNum, 650)
 
   const multiplierHuman = useMemo(() => {
-    const m = Number(multiplier ?? BigInt(0))
+    const m = Number(multiplier ?? 0n)
     if (!m) return '—'
     return `${(m / 10000).toFixed(2)}x (${m})`
   }, [multiplier])
 
-  // Decide display values (demo mode if not enabled)
-  const showDemo = !enabled
-  const tokenNum = showDemo ? DEMO.token : realToken
-  const stakedNum = showDemo ? DEMO.staked : realStaked
-  const baseNum = showDemo ? DEMO.pendingBase : realBase
-  const boostedNum = showDemo ? DEMO.pendingBoosted : realBoosted
-  const nftCount = showDemo ? DEMO.nftCount : Number((nftBal ?? BigInt(0)).toString())
-
-  // Animated display numbers
-  const tokenAnim = useAnimatedNumber(tokenNum, 650)
-  const stakedAnim = useAnimatedNumber(stakedNum, 650)
-  const baseAnim = useAnimatedNumber(baseNum, 650)
-  const boostedAnim = useAnimatedNumber(boostedNum, 650)
-
   const hasAllowance = useMemo(() => {
     try {
       const need = parseUnits(stakeAmt || '0', decimals)
-      return ((allowance ?? BigInt(0)) as bigint) >= need
+      return ((allowance ?? 0n) as bigint) >= need
     } catch {
       return false
     }
   }, [allowance, stakeAmt, decimals])
 
   const { writeContract, data: txHash, isPending: isWriting } = useWriteContract()
-  const { isLoading: isMining, isSuccess } = useWaitForTransactionReceipt({ hash: txHash })
+  const { isLoading: isMining } = useWaitForTransactionReceipt({ hash: txHash })
   const busy = isWriting || isMining
 
   const MAX_UINT256 = (BigInt(1) << BigInt(256)) - BigInt(1)
 
-  // Toast lifecycle for tx
-  const lastHashRef = useRef<string | undefined>(undefined)
-  useEffect(() => {
-    if (txHash && txHash !== lastHashRef.current) {
-      lastHashRef.current = txHash
-      toast.success('Tx sent ✅')
-    }
-  }, [txHash])
-
-  useEffect(() => {
-    if (isSuccess && txHash) toast.success('Tx confirmed 🎉')
-  }, [isSuccess, txHash])
-
   function approveMax() {
-    if (!enabled) return toast.error('Connect wallet + switch network dulu bro')
-    toast('Approving max…')
     writeContract({
       address: TOKEN_ADDRESS as `0x${string}`,
       abi: erc20Abi,
@@ -322,40 +266,26 @@ export default function Dashboard() {
   }
 
   function stake() {
-    if (!enabled) return toast.error('Connect wallet + switch network dulu bro')
-    try {
-      const amt = parseUnits(stakeAmt || '0', decimals)
-      toast('Staking…')
-      writeContract({
-        address: STAKING_ADDRESS as `0x${string}`,
-        abi: stakingAbi,
-        functionName: 'stake',
-        args: [amt],
-      })
-    } catch {
-      toast.error('Invalid stake amount')
-    }
+    const amt = parseUnits(stakeAmt || '0', decimals)
+    writeContract({
+      address: STAKING_ADDRESS as `0x${string}`,
+      abi: stakingAbi,
+      functionName: 'stake',
+      args: [amt],
+    })
   }
 
   function unstake() {
-    if (!enabled) return toast.error('Connect wallet + switch network dulu bro')
-    try {
-      const amt = parseUnits(unstakeAmt || '0', decimals)
-      toast('Unstaking…')
-      writeContract({
-        address: STAKING_ADDRESS as `0x${string}`,
-        abi: stakingAbi,
-        functionName: 'unstake',
-        args: [amt],
-      })
-    } catch {
-      toast.error('Invalid unstake amount')
-    }
+    const amt = parseUnits(unstakeAmt || '0', decimals)
+    writeContract({
+      address: STAKING_ADDRESS as `0x${string}`,
+      abi: stakingAbi,
+      functionName: 'unstake',
+      args: [amt],
+    })
   }
 
   function claim() {
-    if (!enabled) return toast.error('Connect wallet + switch network dulu bro')
-    toast('Claiming…')
     writeContract({
       address: STAKING_ADDRESS as `0x${string}`,
       abi: stakingAbi,
@@ -364,152 +294,95 @@ export default function Dashboard() {
     })
   }
 
+  const shortAddr =
+    typeof address === 'string' ? `${address.slice(0, 6)}…${address.slice(-4)}` : '—'
+
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        background:
-          'radial-gradient(1200px 600px at 20% 10%, rgba(0,0,0,0.06), transparent 60%), radial-gradient(900px 500px at 80% 20%, rgba(0,0,0,0.05), transparent 55%), linear-gradient(180deg, rgba(0,0,0,0.03), transparent 40%)',
-        padding: 28,
-        fontFamily: 'ui-sans-serif, system-ui',
-      }}
-    >
-      <style>{`
-        @keyframes slideUp { 0%{ opacity:0; transform: translateY(12px)} 100%{ opacity:1; transform: translateY(0)} }
-        @keyframes pulse { 0%{ opacity:.35 } 50%{ opacity:.95 } 100%{ opacity:.35 } }
-        .badge { display:inline-flex; align-items:center; gap:8px; padding:8px 12px; border-radius:999px; border:1px solid rgba(0,0,0,0.12); background: rgba(255,255,255,0.75); }
-        .dot { width:8px; height:8px; border-radius:999px; background:#22c55e; animation:pulse 1.8s ease-in-out infinite; }
-        .muted { opacity:.7; }
-        .row { display:flex; justify-content:space-between; gap:10px; align-items:baseline; }
-        .miniBtn { padding:6px 10px; border-radius:999px; border:1px solid rgba(0,0,0,0.12); background:white; cursor:pointer; font-weight:900; }
-        .miniBtn:hover { filter: brightness(.97); }
-        code { font-size: 12px; }
-      `}</style>
-
-      <div style={{ maxWidth: 1040, margin: '0 auto' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
-          <div style={{ animation: 'slideUp .45s ease both' as any }}>
-            <div className="badge">
-              <span className="dot" />
-              <span style={{ fontWeight: 950, fontSize: 13 }}>
-                Network:{' '}
-                <b>{isRightNetwork ? REQUIRED_CHAIN_NAME : isConnected ? 'Wrong Network' : REQUIRED_CHAIN_NAME}</b>
-                {isRightNetwork ? ' ✅' : ''}
-                {showDemo ? ' • Demo mode' : ''}
-              </span>
-            </div>
-
-            <div style={{ fontSize: 30, fontWeight: 950, letterSpacing: -0.6, marginTop: 10 }}>
-              🔥 NFT Boost Staking Dashboard
-            </div>
-
-            <div className="muted" style={{ marginTop: 6, fontSize: 13, lineHeight: 1.55 }}>
-              <div className="row" style={{ justifyContent: 'flex-start', gap: 8, flexWrap: 'wrap' }}>
-                <span>Token:</span>
-                <code>{TOKEN_ADDRESS}</code>
-                <button className="miniBtn" onClick={() => copy(TOKEN_ADDRESS)}>Copy</button>
-                <button className="miniBtn" onClick={() => openExplorer('address', TOKEN_ADDRESS)}>Explorer</button>
-              </div>
-
-              <div className="row" style={{ justifyContent: 'flex-start', gap: 8, flexWrap: 'wrap', marginTop: 6 }}>
-                <span>NFT:</span>
-                <code>{NFT_ADDRESS}</code>
-                <button className="miniBtn" onClick={() => copy(NFT_ADDRESS)}>Copy</button>
-                <button className="miniBtn" onClick={() => openExplorer('address', NFT_ADDRESS)}>Explorer</button>
-              </div>
-
-              <div className="row" style={{ justifyContent: 'flex-start', gap: 8, flexWrap: 'wrap', marginTop: 6 }}>
-                <span>Staking:</span>
-                <code>{STAKING_ADDRESS}</code>
-                <button className="miniBtn" onClick={() => copy(STAKING_ADDRESS)}>Copy</button>
-                <button className="miniBtn" onClick={() => openExplorer('address', STAKING_ADDRESS)}>Explorer</button>
-              </div>
+    <main style={{ minHeight: '100vh', background: '#0b0f19', color: 'white' }}>
+      <div style={{ maxWidth: 980, margin: '0 auto', padding: '26px 20px 70px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+          <div>
+            <div style={{ fontSize: 28, fontWeight: 950, letterSpacing: -0.5 }}>🔥 NFT Boost Staking Dashboard</div>
+            <div style={{ opacity: 0.72, marginTop: 6, fontSize: 13 }}>
+              <span style={{ opacity: 0.9 }}>Network:</span>{' '}
+              <b style={{ color: isRightNetwork ? '#22c55e' : '#f97316' }}>
+                {isRightNetwork ? 'Robinhood Chain Testnet' : `Wrong network (chainId ${chainId})`}
+              </b>
             </div>
           </div>
 
-          {!isConnected ? (
-            <Button disabled={isConnecting} onClick={() => connect({ connector: injected() })}>
-              {isConnecting ? 'Connecting…' : 'Connect Wallet'}
-            </Button>
-          ) : (
-            <div style={{ textAlign: 'right', animation: 'slideUp .5s ease both' as any }}>
-              <div style={{ fontWeight: 950 }}>{shortAddr(address)}</div>
-              <div style={{ marginTop: 10, display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            <Link
+              href="/"
+              style={{
+                color: 'rgba(255,255,255,0.8)',
+                textDecoration: 'none',
+                fontWeight: 800,
+                padding: '8px 10px',
+                borderRadius: 12,
+                border: '1px solid rgba(255,255,255,0.14)',
+                background: 'rgba(255,255,255,0.06)',
+              }}
+            >
+              ← Home
+            </Link>
+
+            {!isConnected ? (
+              <Button disabled={isConnecting} onClick={() => connect({ connector: injected() })}>
+                {isConnecting ? 'Connecting…' : 'Connect Wallet'}
+              </Button>
+            ) : !isRightNetwork ? (
+              <Button
+                disabled={isSwitching}
+                onClick={() => switchChain({ chainId: REQUIRED_CHAIN_ID })}
+              >
+                {isSwitching ? 'Switching…' : 'Switch to Robinhood Testnet'}
+              </Button>
+            ) : (
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                <div style={{ fontWeight: 900 }}>{shortAddr}</div>
                 <Button variant="ghost" onClick={() => disconnect()}>
                   Disconnect
                 </Button>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
-        {isConnected && !isRightNetwork && (
-          <div
-            style={{
-              marginTop: 14,
-              padding: 12,
-              borderRadius: 14,
-              border: '1px solid rgba(255,0,0,0.25)',
-              background: 'rgba(255,0,0,0.06)',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              gap: 12,
-              animation: 'slideUp .5s ease both' as any,
-            }}
-          >
-            <div>
-              <div style={{ fontWeight: 950 }}>⚠️ Wrong network</div>
-              <div style={{ opacity: 0.85, fontSize: 13 }}>
-                Switch to <b>{REQUIRED_CHAIN_NAME}</b> (chainId {REQUIRED_CHAIN_ID})
-              </div>
-            </div>
+        <div style={{ marginTop: 14, opacity: 0.7, fontSize: 12, lineHeight: 1.6 }}>
+          Token: <a style={{ color: 'white' }} href={`${EXPLORER_ADDR}${TOKEN_ADDRESS}`} target="_blank" rel="noreferrer">{TOKEN_ADDRESS}</a>
+          <br />
+          NFT: <a style={{ color: 'white' }} href={`${EXPLORER_ADDR}${NFT_ADDRESS}`} target="_blank" rel="noreferrer">{NFT_ADDRESS}</a>
+          <br />
+          Staking: <a style={{ color: 'white' }} href={`${EXPLORER_ADDR}${STAKING_ADDRESS}`} target="_blank" rel="noreferrer">{STAKING_ADDRESS}</a>
+        </div>
 
-            <Button
-              disabled={isSwitching}
-              onClick={() => switchChain({ chainId: REQUIRED_CHAIN_ID })}
-              style={{ whiteSpace: 'nowrap' }}
-            >
-              {isSwitching ? 'Switching…' : 'Switch Network'}
-            </Button>
+        {!isConnected && (
+          <div style={{ marginTop: 18, borderRadius: 18, padding: 16, border: '1px solid rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.04)' }}>
+            Connect wallet untuk mulai. Setelah connect, kalau network salah, klik tombol switch.
+          </div>
+        )}
+
+        {isConnected && !isRightNetwork && (
+          <div style={{ marginTop: 18, borderRadius: 18, padding: 16, border: '1px solid rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.04)' }}>
+            Lu lagi di network yang salah. Klik <b>Switch to Robinhood Testnet</b>.
           </div>
         )}
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 14, marginTop: 18 }}>
           <Card title="Balances">
-            <div className="row">
-              <span>ERC20</span>
-              <b>{tokenAnim.toLocaleString(undefined, { maximumFractionDigits: 6 })}</b>
-            </div>
-            <div className="row" style={{ marginTop: 8 }}>
-              <span>NFT count</span>
-              <b>{nftCount}</b>
-            </div>
+            <div>ERC20: <b>{tokenBalNum.toLocaleString(undefined, { maximumFractionDigits: 4 })}</b></div>
+            <div style={{ marginTop: 8 }}>NFT count: <b>{nftCountNum.toLocaleString()}</b></div>
           </Card>
 
           <Card title="Staking">
-            <div className="row">
-              <span>Staked</span>
-              <b>{stakedAnim.toLocaleString(undefined, { maximumFractionDigits: 6 })}</b>
-            </div>
-            <div className="row" style={{ marginTop: 8 }}>
-              <span>Multiplier</span>
-              <b>{showDemo ? DEMO.multiplier : multiplierHuman}</b>
-            </div>
+            <div>Staked: <b>{stakedNum.toLocaleString(undefined, { maximumFractionDigits: 4 })}</b></div>
+            <div style={{ marginTop: 8 }}>Multiplier: <b>{multiplierHuman}</b></div>
           </Card>
 
-          <Card title="Rewards (smooth)">
-            <div className="row">
-              <span>Pending base</span>
-              <b>{baseAnim.toLocaleString(undefined, { maximumFractionDigits: 6 })}</b>
-            </div>
-            <div className="row" style={{ marginTop: 8 }}>
-              <span>Pending boosted</span>
-              <b>{boostedAnim.toLocaleString(undefined, { maximumFractionDigits: 6 })}</b>
-            </div>
-            <div style={{ marginTop: 10, opacity: 0.65, fontSize: 12 }}>
-              Auto refresh ~3s + animated counters (no “loncat”).
-            </div>
+          <Card title="Rewards (live)">
+            <div>Pending base: <b>{pendingBaseAnim.toLocaleString(undefined, { maximumFractionDigits: 6 })}</b></div>
+            <div style={{ marginTop: 8 }}>Pending boosted: <b>{pendingRewardsAnim.toLocaleString(undefined, { maximumFractionDigits: 6 })}</b></div>
           </Card>
         </div>
 
@@ -518,39 +391,40 @@ export default function Dashboard() {
             <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
               <div style={{ flex: 1 }}>
                 <Input value={stakeAmt} onChange={(e) => setStakeAmt(e.target.value)} placeholder="Amount" />
+                <div style={{ opacity: 0.7, marginTop: 8, fontSize: 12 }}>
+                  Tip: approve max sekali → stake berkali-kali.
+                </div>
               </div>
 
-              {!hasAllowance ? (
-                <Button disabled={!enabled || busy} onClick={approveMax}>
-                  {busy ? 'Processing…' : 'Approve (max)'}
+              {!enabled ? (
+                <Button disabled>Locked</Button>
+              ) : !hasAllowance ? (
+                <Button disabled={busy} onClick={approveMax}>
+                  {busy ? 'Processing…' : 'Approve Max'}
                 </Button>
               ) : (
-                <Button disabled={!enabled || busy} onClick={stake}>
+                <Button disabled={busy} onClick={stake}>
                   {busy ? 'Processing…' : 'Stake'}
                 </Button>
               )}
             </div>
-
-            <div style={{ opacity: 0.75, marginTop: 10, fontSize: 12 }}>
-              Approve sekali, lalu stake berkali-kali.
-            </div>
           </Card>
 
           <Card title="Claim / Unstake">
-            <div style={{ display: 'flex', gap: 10, marginBottom: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: 10, marginBottom: 12, alignItems: 'center' }}>
               <Button disabled={!enabled || busy} onClick={claim}>
                 {busy ? 'Processing…' : 'Claim'}
               </Button>
 
               {txHash && (
-                <>
-                  <Button variant="ghost" onClick={() => openExplorer('tx', txHash)} style={{ fontWeight: 950 }}>
-                    View Tx
-                  </Button>
-                  <Button variant="ghost" onClick={() => copy(txHash)} style={{ fontWeight: 950 }}>
-                    Copy TxHash
-                  </Button>
-                </>
+                <a
+                  href={`${EXPLORER_TX}${txHash}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ color: 'rgba(255,255,255,0.85)', fontWeight: 800, textDecoration: 'none' }}
+                >
+                  View Tx ↗
+                </a>
               )}
             </div>
 
@@ -562,62 +436,9 @@ export default function Dashboard() {
                 {busy ? 'Processing…' : 'Unstake'}
               </Button>
             </div>
-
-            {txHash && (
-              <div style={{ marginTop: 10, fontSize: 12, opacity: 0.85 }}>
-                Tx:{' '}
-                <a
-                  href={`${EXPLORER}/tx/${txHash}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  style={{ fontWeight: 950 }}
-                >
-                  {txHash.slice(0, 10)}…{txHash.slice(-8)}
-                </a>
-              </div>
-            )}
           </Card>
-        </div>
-
-        <div style={{ marginTop: 14, display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 14 }}>
-          <Card title="How it works">
-            <div style={{ opacity: 0.8, lineHeight: 1.65, fontSize: 13 }}>
-              1) Approve token → 2) Stake → 3) Rewards accumulate → 4) Claim → 5) Hold NFT to boost multiplier.
-            </div>
-          </Card>
-
-          <Card title="Public demo checklist">
-            <div style={{ opacity: 0.8, lineHeight: 1.75, fontSize: 13 }}>
-              ✅ Landing page proper<br />
-              ✅ /dashboard route<br />
-              ✅ Network guard + switch<br />
-              ✅ Tx hash explorer link<br />
-              ✅ Smooth animated rewards
-            </div>
-          </Card>
-
-          <Card title="Links">
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-              <button className="miniBtn" onClick={() => openExplorer('address', STAKING_ADDRESS)}>
-                Staking explorer
-              </button>
-              <button className="miniBtn" onClick={() => openExplorer('address', TOKEN_ADDRESS)}>
-                Token explorer
-              </button>
-              <button className="miniBtn" onClick={() => openExplorer('address', NFT_ADDRESS)}>
-                NFT explorer
-              </button>
-            </div>
-            <div style={{ marginTop: 10, opacity: 0.65, fontSize: 12 }}>
-              Built by @{`Karimkusin88`} • {REQUIRED_CHAIN_NAME}
-            </div>
-          </Card>
-        </div>
-
-        <div style={{ marginTop: 18, opacity: 0.55, fontSize: 12 }}>
-          Demo dApp • {REQUIRED_CHAIN_NAME} • Rewards auto refresh + smooth UI • Explorer links enabled
         </div>
       </div>
-    </div>
+    </main>
   )
 }
