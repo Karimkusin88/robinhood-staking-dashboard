@@ -209,7 +209,7 @@ export default function Dashboard() {
     query: { enabled, refetchInterval: 5000 },
   })
 
-  const stakedAmount = (userInfo?.[0] ?? 0n) as bigint
+  const stakedAmount = (userInfo?.[0] ?? BigInt(0)) as bigint
 
   const fmt = (v?: bigint) => (v ? formatUnits(v, decimals) : '0')
   const fmtInt = (v?: bigint) => (v ? v.toString() : '0')
@@ -221,7 +221,7 @@ export default function Dashboard() {
   const nftCountHuman = useMemo(() => fmtInt(nftBal as bigint), [nftBal])
 
   const multiplierHuman = useMemo(() => {
-    const mBig = (multiplier ?? 0n) as bigint
+    const mBig = (multiplier BigInt(0)) as bigint
     if (!mBig) return '—'
     const mStr = (Number(mBig) / 10000).toFixed(2) // 10000..15000 range
     return `${mStr}x (${mBig.toString()})`
@@ -230,7 +230,7 @@ export default function Dashboard() {
   const hasAllowance = useMemo(() => {
     try {
       const need = parseUnits(stakeAmt || '0', decimals)
-      return ((allowance ?? 0n) as bigint) >= need
+      return ((allowance BigInt(0)) as bigint) >= need
     } catch {
       return false
     }
@@ -239,13 +239,13 @@ export default function Dashboard() {
   const { writeContract, data: txHash, isPending: isWriting } = useWriteContract()
   const { isLoading: isMining } = useWaitForTransactionReceipt({ hash: txHash })
   const busy = isWriting || isMining
-
+  args: [STAKING_ADDRESS as `0x${string}`, MAX_UINT256],
   function approveMax() {
     writeContract({
       address: TOKEN_ADDRESS as `0x${string}`,
       abi: erc20Abi,
       functionName: 'approve',
-      args: [STAKING_ADDRESS as `0x${string}`, (2n ** 256n) - 1n],
+      const MAX_UINT256 = (BigInt(1) << BigInt(256)) - BigInt(1)
     })
   }
 
