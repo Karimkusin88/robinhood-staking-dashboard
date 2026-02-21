@@ -229,26 +229,26 @@ export default function Dashboard() {
 }, [multiplier])
 
   const hasAllowance = useMemo(() => {
-    try {
-      const need = parseUnits(stakeAmt || '0', decimals)
-      return ((allowance BigInt(0)) as bigint) >= need
-    } catch {
-      return false
-    }
-  }, [allowance, stakeAmt, decimals])
+  try {
+    const need = parseUnits(stakeAmt || '0', decimals)
+    return ((allowance ?? BigInt(0)) as bigint) >= need
+  } catch {
+    return false
+  }
+}, [allowance, stakeAmt, decimals])
 
   const { writeContract, data: txHash, isPending: isWriting } = useWriteContract()
   const { isLoading: isMining } = useWaitForTransactionReceipt({ hash: txHash })
   const busy = isWriting || isMining
-  args: [STAKING_ADDRESS as `0x${string}`, MAX_UINT256],
+  const MAX_UINT256 = (BigInt(1) << BigInt(256)) - BigInt(1),
   function approveMax() {
-    writeContract({
-      address: TOKEN_ADDRESS as `0x${string}`,
-      abi: erc20Abi,
-      functionName: 'approve',
-      const MAX_UINT256 = (BigInt(1) << BigInt(256)) - BigInt(1)
-    })
-  }
+  writeContract({
+    address: TOKEN_ADDRESS as `0x${string}`,
+    abi: erc20Abi,
+    functionName: 'approve',
+    args: [STAKING_ADDRESS as `0x${string}`, MAX_UINT256],
+  })
+}
 
   function stake() {
     const amt = parseUnits(stakeAmt || '0', decimals)
