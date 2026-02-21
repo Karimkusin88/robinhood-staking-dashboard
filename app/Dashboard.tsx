@@ -241,6 +241,7 @@ export default function Dashboard() {
   const { isLoading: isMining } = useWaitForTransactionReceipt({ hash: txHash })
   const busy = isWriting || isMining
   const MAX_UINT256 = (BigInt(1) << BigInt(256)) - BigInt(1),
+  
   function approveMax() {
   writeContract({
     address: TOKEN_ADDRESS as `0x${string}`,
