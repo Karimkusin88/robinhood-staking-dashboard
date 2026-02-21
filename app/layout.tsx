@@ -1,6 +1,12 @@
 import './globals.css'
 import type { Metadata } from 'next'
 import { Toaster } from 'react-hot-toast'
+import Providers from './providers'
+...
+<body>
+  <Providers>{children}</Providers>
+  <Toaster ... />
+</body>
 
 export const metadata: Metadata = {
   title: 'Robinhood Testnet • NFT Boost Staking',
