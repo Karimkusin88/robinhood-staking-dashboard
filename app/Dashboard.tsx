@@ -288,7 +288,7 @@ function claim() {
 
   const nftCountNum = useMemo(() => {
     try {
-      return Number(nftBal BigInt(0))
+      return Number((nftBal ?? BigInt(0)).toString())
     } catch {
       return 0
     }
