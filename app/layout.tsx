@@ -1,4 +1,10 @@
+import "./globals.css";
 import Providers from "./providers";
+
+export const metadata = {
+  title: "Robinhood Staking Dashboard",
+  description: "NFT-boosted staking dashboard on Robinhood Testnet",
+};
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
