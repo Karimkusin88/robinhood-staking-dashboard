@@ -1,7 +1,7 @@
-"use client";
+import DashboardClient from "./DashboardClient";
 
-import Dashboard from "../Dashboard";
+export const dynamic = "force-dynamic";
 
 export default function Page() {
-  return <Dashboard />;
+  return <DashboardClient />;
 }
