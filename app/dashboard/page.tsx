@@ -1,9 +1,7 @@
-'use client'
+"use client";
 
-export const dynamic = 'force-dynamic'
-
-import Dashboard from '../Dashboard'
+import Dashboard from "../Dashboard";
 
 export default function Page() {
-  return <Dashboard />
+  return <Dashboard />;
 }
