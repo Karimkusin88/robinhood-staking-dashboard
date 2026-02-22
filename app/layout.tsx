@@ -1,27 +1,16 @@
-import './globals.css'
 import type { Metadata } from 'next'
-import { Toaster } from 'react-hot-toast'
+import Providers from './providers'
 
 export const metadata: Metadata = {
-  title: 'Robinhood Testnet • NFT Boost Staking',
-  description: 'ERC20 + NFT boosted staking dashboard demo on Robinhood testnet.',
+  title: 'Robinhood Staking Dashboard',
+  description: 'NFT-boosted staking dashboard on Robinhood Testnet',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body style={{ margin: 0 }}>
-        {children}
-        <Toaster
-          position="top-right"
-          toastOptions={{
-            duration: 3500,
-            style: {
-              borderRadius: 14,
-              fontWeight: 800,
-            },
-          }}
-        />
+      <body>
+        <Providers>{children}</Providers>
       </body>
     </html>
   )

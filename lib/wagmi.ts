@@ -1,25 +1,23 @@
-import { createConfig, http } from 'wagmi'
-import { defineChain } from 'viem'
+import { http, createConfig } from 'wagmi'
+import { injected } from 'wagmi/connectors'
 
-export const robinhood = defineChain({
+export const robinhoodTestnet = {
   id: 46630,
   name: 'Robinhood Testnet',
-  nativeCurrency: {
-    name: 'Robinhood',
-    symbol: 'RH',
-    decimals: 18,
-  },
+  nativeCurrency: { name: 'RBH', symbol: 'RBH', decimals: 18 },
   rpcUrls: {
-  default: { http: ['https://rpc.testnet.chain.robinhood.com'] },
-},
-  blockExplorers: {
-    default: { name: 'Explorer', url: 'https://explorer.testnet.chain.robinhood.com' },
+    default: { http: ['https://rpc.testnet.chain.robinhood.com'] },
   },
-})
+  blockExplorers: {
+    default: { name: 'Robinhood Explorer', url: 'https://explorer.testnet.chain.robinhood.com' },
+  },
+} as const
 
 export const config = createConfig({
-  chains: [robinhood],
+  chains: [robinhoodTestnet],
+  connectors: [injected()],
   transports: {
-    [robinhood.id]: http(),
+    [robinhoodTestnet.id]: http(robinhoodTestnet.rpcUrls.default.http[0]),
   },
+  ssr: true,
 })
