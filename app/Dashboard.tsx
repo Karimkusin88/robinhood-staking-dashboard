@@ -1,29 +1,20 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   useAccount,
+  useChainId,
   useConnect,
   useDisconnect,
   useReadContract,
-  useWriteContract,
-  useWaitForTransactionReceipt,
-  useChainId,
   useSwitchChain,
+  useWaitForTransactionReceipt,
+  useWriteContract,
 } from 'wagmi'
 import { injected } from 'wagmi/connectors'
 import { formatUnits, parseAbi, parseUnits } from 'viem'
 import { TOKEN_ADDRESS, NFT_ADDRESS, STAKING_ADDRESS } from '@/lib/constants'
-
-/**
- * NOTE:
- * - REQUIRED_CHAIN_ID harus sama dengan Robinhood testnet chainId lu.
- * - Di log hardhat lu chainId = 46630 (0xb636)
- */
-const REQUIRED_CHAIN_ID = 46630
-
-const EXPLORER_TX = 'https://explorer.testnet.chain.robinhood.com/tx/'
-const EXPLORER_ADDR = 'https://explorer.testnet.chain.robinhood.com/address/'
+import { robinhoodTestnet } from '@/lib/wagmi'
 
 const erc20Abi = parseAbi([
   'function balanceOf(address) view returns (uint256)',
@@ -44,43 +35,47 @@ const stakingAbi = parseAbi([
   'function claim()',
 ])
 
+const EXPLORER = 'https://explorer.testnet.chain.robinhood.com'
+
+function shortAddr(a?: string) {
+  if (!a) return '—'
+  return `${a.slice(0, 6)}…${a.slice(-4)}`
+}
+
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div
       style={{
-        border: '1px solid rgba(255,255,255,0.12)',
         borderRadius: 18,
         padding: 16,
-        background: 'rgba(255,255,255,0.05)',
-        boxShadow: '0 10px 30px rgba(0,0,0,0.25)',
+        background: 'rgba(255,255,255,0.06)',
+        border: '1px solid rgba(255,255,255,0.10)',
+        backdropFilter: 'blur(10px)',
       }}
     >
-      <div style={{ fontWeight: 900, marginBottom: 10 }}>{title}</div>
+      <div style={{ fontWeight: 900, marginBottom: 10, letterSpacing: 0.2 }}>{title}</div>
       {children}
     </div>
   )
 }
 
-function Button(props: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'ghost' }) {
-  const { disabled, variant = 'primary' } = props
-  const bg =
-    variant === 'primary'
-      ? disabled
-        ? 'rgba(255,255,255,0.10)'
-        : 'white'
-      : 'transparent'
-  const color = variant === 'primary' ? (disabled ? 'rgba(255,255,255,0.55)' : 'black') : 'white'
-  const border = variant === 'primary' ? '1px solid rgba(255,255,255,0.12)' : '1px solid rgba(255,255,255,0.18)'
-
+function Btn(props: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'solid' | 'ghost' }) {
+  const { disabled, variant = 'solid', ...rest } = props
+  const solid = variant === 'solid'
   return (
     <button
-      {...props}
+      {...rest}
+      disabled={disabled}
       style={{
         padding: '10px 12px',
         borderRadius: 14,
-        border,
-        background: bg,
-        color,
+        border: solid ? '0' : '1px solid rgba(255,255,255,0.18)',
+        background: disabled
+          ? 'rgba(255,255,255,0.08)'
+          : solid
+            ? 'linear-gradient(135deg, rgba(0,200,120,1), rgba(0,170,255,1))'
+            : 'rgba(255,255,255,0.06)',
+        color: solid ? 'black' : 'white',
         cursor: disabled ? 'not-allowed' : 'pointer',
         fontWeight: 900,
       }}
@@ -88,7 +83,7 @@ function Button(props: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant
   )
 }
 
-function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
+function Inp(props: React.InputHTMLAttributes<HTMLInputElement>) {
   return (
     <input
       {...props}
@@ -96,7 +91,7 @@ function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
         width: '100%',
         padding: '10px 12px',
         borderRadius: 14,
-        border: '1px solid rgba(255,255,255,0.16)',
+        border: '1px solid rgba(255,255,255,0.18)',
         background: 'rgba(0,0,0,0.25)',
         color: 'white',
         outline: 'none',
@@ -105,53 +100,39 @@ function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
   )
 }
 
-function clamp(n: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, n))
-}
-
-// animasi angka halus (tanpa library)
-function useAnimatedNumber(target: number, ms = 550) {
-  const [value, setValue] = useState(target)
+// super simple “smooth number” (no lib)
+function useSmoothNumber(target: number, speed = 0.18) {
+  const [v, setV] = useState(target)
   const raf = useRef<number | null>(null)
-  const startRef = useRef(0)
-  const fromRef = useRef(target)
 
   useEffect(() => {
-    if (!Number.isFinite(target)) return
-    const from = value
-    fromRef.current = from
-    startRef.current = performance.now()
-
-    const tick = (t: number) => {
-      const p = clamp((t - startRef.current) / ms, 0, 1)
-      const eased = 1 - Math.pow(1 - p, 3)
-      const next = fromRef.current + (target - fromRef.current) * eased
-      setValue(next)
-      if (p < 1) raf.current = requestAnimationFrame(tick)
-    }
-
     if (raf.current) cancelAnimationFrame(raf.current)
-    raf.current = requestAnimationFrame(tick)
-
+    const step = () => {
+      setV((cur) => {
+        const next = cur + (target - cur) * speed
+        if (Math.abs(target - next) < 0.000001) return target
+        return next
+      })
+      raf.current = requestAnimationFrame(step)
+    }
+    raf.current = requestAnimationFrame(step)
     return () => {
       if (raf.current) cancelAnimationFrame(raf.current)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [target])
+  }, [target, speed])
 
-  return value
+  return v
 }
 
 export default function Dashboard() {
   const { address, isConnected } = useAccount()
+  const chainId = useChainId()
   const { connect, isPending: isConnecting } = useConnect()
   const { disconnect } = useDisconnect()
-
-  const chainId = useChainId()
   const { switchChain, isPending: isSwitching } = useSwitchChain()
 
-  const isRightNetwork = chainId === REQUIRED_CHAIN_ID
-  const enabled = Boolean(isConnected && typeof address === 'string' && isRightNetwork)
+  const isRightNetwork = chainId === robinhoodTestnet.id
+  const enabled = Boolean(isConnected && address && isRightNetwork)
 
   const [stakeAmt, setStakeAmt] = useState('10')
   const [unstakeAmt, setUnstakeAmt] = useState('1')
@@ -160,7 +141,6 @@ export default function Dashboard() {
     address: TOKEN_ADDRESS as `0x${string}`,
     abi: erc20Abi,
     functionName: 'decimals',
-    query: { enabled: isConnected && typeof address === 'string' },
   })
   const decimals = Number(decimalsData ?? 18)
 
@@ -177,7 +157,7 @@ export default function Dashboard() {
     abi: erc721Abi,
     functionName: 'balanceOf',
     args: enabled ? [address as `0x${string}`] : undefined,
-    query: { enabled, refetchInterval: 12000 },
+    query: { enabled, refetchInterval: 6000 },
   })
 
   const { data: allowance } = useReadContract({
@@ -222,22 +202,28 @@ export default function Dashboard() {
 
   const stakedAmount = (userInfo?.[0] ?? 0n) as bigint
 
-  const fmt = (v?: bigint) => (v ? Number(formatUnits(v, decimals)) : 0)
-  const fmtInt = (v?: bigint) => (v ? Number(v.toString()) : 0)
+  const fmt = (v?: bigint) => (v ? formatUnits(v, decimals) : '0')
+  const fmtNum = (v?: bigint) => {
+    try {
+      return Number(fmt(v))
+    } catch {
+      return 0
+    }
+  }
 
-  const tokenBalNum = useMemo(() => fmt(tokenBal as bigint), [tokenBal, decimals])
-  const stakedNum = useMemo(() => fmt(stakedAmount), [stakedAmount, decimals])
-  const pendingBaseNum = useMemo(() => fmt(pendingBase as bigint), [pendingBase, decimals])
-  const pendingRewardsNum = useMemo(() => fmt(pendingRewards as bigint), [pendingRewards, decimals])
-  const nftCountNum = useMemo(() => fmtInt(nftBal as bigint), [nftBal])
+  const tokenBalNum = fmtNum(tokenBal as bigint)
+  const stakedNum = fmtNum(stakedAmount)
+  const pendingBaseNum = fmtNum(pendingBase as bigint)
+  const pendingBoostNum = fmtNum(pendingRewards as bigint)
 
-  const pendingBaseAnim = useAnimatedNumber(pendingBaseNum, 650)
-  const pendingRewardsAnim = useAnimatedNumber(pendingRewardsNum, 650)
+  const pendingBaseSmooth = useSmoothNumber(pendingBaseNum)
+  const pendingBoostSmooth = useSmoothNumber(pendingBoostNum)
 
-  const multiplierHuman = useMemo(() => {
-    const m = Number(multiplier ?? 0n)
+  const multiplierText = useMemo(() => {
+    const m = Number((multiplier ?? 0n) as bigint)
     if (!m) return '—'
-    return `${(m / 10000).toFixed(2)}x (${m})`
+    const x = (m / 10000).toFixed(2)
+    return `${x}x (${m})`
   }, [multiplier])
 
   const hasAllowance = useMemo(() => {
@@ -253,9 +239,9 @@ export default function Dashboard() {
   const { isLoading: isMining } = useWaitForTransactionReceipt({ hash: txHash })
   const busy = isWriting || isMining
 
-  const MAX_UINT256 = (BigInt(1) << BigInt(256)) - BigInt(1)
+  const MAX_UINT256 = (1n << 256n) - 1n
 
-  function approveMax() {
+  const approveMax = () => {
     writeContract({
       address: TOKEN_ADDRESS as `0x${string}`,
       abi: erc20Abi,
@@ -264,7 +250,7 @@ export default function Dashboard() {
     })
   }
 
-  function stake() {
+  const stake = () => {
     const amt = parseUnits(stakeAmt || '0', decimals)
     writeContract({
       address: STAKING_ADDRESS as `0x${string}`,
@@ -274,7 +260,7 @@ export default function Dashboard() {
     })
   }
 
-  function unstake() {
+  const unstake = () => {
     const amt = parseUnits(unstakeAmt || '0', decimals)
     writeContract({
       address: STAKING_ADDRESS as `0x${string}`,
@@ -284,7 +270,7 @@ export default function Dashboard() {
     })
   }
 
-  function claim() {
+  const claim = () => {
     writeContract({
       address: STAKING_ADDRESS as `0x${string}`,
       abi: stakingAbi,
@@ -293,134 +279,178 @@ export default function Dashboard() {
     })
   }
 
-  const shortAddr =
-    typeof address === 'string' ? `${address.slice(0, 6)}…${address.slice(-4)}` : '—'
-
   return (
-    <main style={{ minHeight: '100vh', background: '#0b0f19', color: 'white' }}>
-      <div style={{ maxWidth: 980, margin: '0 auto', padding: '26px 20px 70px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+    <main
+      style={{
+        minHeight: '100vh',
+        padding: 28,
+        fontFamily: 'ui-sans-serif, system-ui',
+        background:
+          'radial-gradient(1200px 700px at 20% 0%, rgba(0,200,120,0.22), transparent 55%), radial-gradient(900px 600px at 90% 10%, rgba(0,170,255,0.18), transparent 50%), #0b0f14',
+        color: 'white',
+      }}
+    >
+      <div style={{ maxWidth: 1080, margin: '0 auto' }}>
+        {/* top bar */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
           <div>
-            <div style={{ fontSize: 28, fontWeight: 950, letterSpacing: -0.5 }}>🔥 NFT Boost Staking Dashboard</div>
-            <div style={{ opacity: 0.72, marginTop: 6, fontSize: 13 }}>
-              <span style={{ opacity: 0.9 }}>Network:</span>{' '}
-              <b style={{ color: isRightNetwork ? '#22c55e' : '#f97316' }}>
-                {isRightNetwork ? 'Robinhood Chain Testnet' : `Wrong network (chainId ${chainId})`}
-              </b>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+              <div
+                style={{
+                  width: 42,
+                  height: 42,
+                  borderRadius: 14,
+                  background: 'linear-gradient(135deg, rgba(0,200,120,1), rgba(0,170,255,1))',
+                  boxShadow: '0 10px 35px rgba(0,200,120,0.25)',
+                }}
+              />
+              <div>
+                <div style={{ fontSize: 18, fontWeight: 950, letterSpacing: 0.2 }}>
+                  NFT Boost Staking Dashboard
+                </div>
+                <div style={{ opacity: 0.75, marginTop: 2, fontSize: 12 }}>
+                  Network: <b>{isRightNetwork ? 'Robinhood Testnet' : `Wrong network (chainId ${chainId})`}</b>
+                </div>
+              </div>
             </div>
           </div>
 
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-            <Link
-              href="/"
-              style={{
-                color: 'rgba(255,255,255,0.8)',
-                textDecoration: 'none',
-                fontWeight: 800,
-                padding: '8px 10px',
-                borderRadius: 12,
-                border: '1px solid rgba(255,255,255,0.14)',
-                background: 'rgba(255,255,255,0.06)',
-              }}
-            >
-              ← Home
-            </Link>
+          {!isConnected ? (
+            <Btn disabled={isConnecting} onClick={() => connect({ connector: injected() })}>
+              {isConnecting ? 'Connecting…' : 'Connect Wallet'}
+            </Btn>
+          ) : (
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+              {!isRightNetwork ? (
+                <Btn
+                  disabled={isSwitching}
+                  onClick={() => switchChain({ chainId: robinhoodTestnet.id })}
+                >
+                  {isSwitching ? 'Switching…' : 'Switch to Robinhood Testnet'}
+                </Btn>
+              ) : (
+                <div
+                  style={{
+                    padding: '10px 12px',
+                    borderRadius: 14,
+                    border: '1px solid rgba(255,255,255,0.18)',
+                    background: 'rgba(255,255,255,0.06)',
+                    fontWeight: 900,
+                  }}
+                >
+                  {shortAddr(address)}
+                </div>
+              )}
 
-            {!isConnected ? (
-              <Button disabled={isConnecting} onClick={() => connect({ connector: injected() })}>
-                {isConnecting ? 'Connecting…' : 'Connect Wallet'}
-              </Button>
-            ) : !isRightNetwork ? (
-              <Button
-                disabled={isSwitching}
-                onClick={() => switchChain({ chainId: REQUIRED_CHAIN_ID })}
-              >
-                {isSwitching ? 'Switching…' : 'Switch to Robinhood Testnet'}
-              </Button>
-            ) : (
-              <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                <div style={{ fontWeight: 900 }}>{shortAddr}</div>
-                <Button variant="ghost" onClick={() => disconnect()}>
-                  Disconnect
-                </Button>
-              </div>
-            )}
-          </div>
+              <Btn variant="ghost" onClick={() => disconnect()}>
+                Disconnect
+              </Btn>
+            </div>
+          )}
         </div>
 
-        <div style={{ marginTop: 14, opacity: 0.7, fontSize: 12, lineHeight: 1.6 }}>
-          Token: <a style={{ color: 'white' }} href={`${EXPLORER_ADDR}${TOKEN_ADDRESS}`} target="_blank" rel="noreferrer">{TOKEN_ADDRESS}</a>
-          <br />
-          NFT: <a style={{ color: 'white' }} href={`${EXPLORER_ADDR}${NFT_ADDRESS}`} target="_blank" rel="noreferrer">{NFT_ADDRESS}</a>
-          <br />
-          Staking: <a style={{ color: 'white' }} href={`${EXPLORER_ADDR}${STAKING_ADDRESS}`} target="_blank" rel="noreferrer">{STAKING_ADDRESS}</a>
-        </div>
-
-        {!isConnected && (
-          <div style={{ marginTop: 18, borderRadius: 18, padding: 16, border: '1px solid rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.04)' }}>
-            Connect wallet untuk mulai. Setelah connect, kalau network salah, klik tombol switch.
-          </div>
-        )}
-
+        {/* guard */}
         {isConnected && !isRightNetwork && (
-          <div style={{ marginTop: 18, borderRadius: 18, padding: 16, border: '1px solid rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.04)' }}>
-            Lu lagi di network yang salah. Klik <b>Switch to Robinhood Testnet</b>.
+          <div
+            style={{
+              marginTop: 16,
+              padding: 14,
+              borderRadius: 16,
+              border: '1px solid rgba(255,80,80,0.30)',
+              background: 'rgba(255,80,80,0.08)',
+              lineHeight: 1.5,
+              fontWeight: 800,
+            }}
+          >
+            Wrong network bro. Klik tombol <b>Switch to Robinhood Testnet</b> biar dashboard jalan.
           </div>
         )}
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 14, marginTop: 18 }}>
+        {/* cards */}
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+            gap: 14,
+            marginTop: 18,
+          }}
+        >
           <Card title="Balances">
-            <div>ERC20: <b>{tokenBalNum.toLocaleString(undefined, { maximumFractionDigits: 4 })}</b></div>
-            <div style={{ marginTop: 8 }}>NFT count: <b>{nftCountNum.toLocaleString()}</b></div>
+            <div style={{ opacity: 0.8, fontSize: 12 }}>ERC20</div>
+            <div style={{ fontSize: 20, fontWeight: 950 }}>{tokenBalNum.toLocaleString(undefined, { maximumFractionDigits: 6 })}</div>
+            <div style={{ marginTop: 10, opacity: 0.85 }}>
+              NFT count: <b>{(nftBal ?? 0n).toString()}</b>
+            </div>
           </Card>
 
           <Card title="Staking">
-            <div>Staked: <b>{stakedNum.toLocaleString(undefined, { maximumFractionDigits: 4 })}</b></div>
-            <div style={{ marginTop: 8 }}>Multiplier: <b>{multiplierHuman}</b></div>
+            <div style={{ opacity: 0.8, fontSize: 12 }}>Staked</div>
+            <div style={{ fontSize: 20, fontWeight: 950 }}>{stakedNum.toLocaleString(undefined, { maximumFractionDigits: 6 })}</div>
+            <div style={{ marginTop: 10, opacity: 0.85 }}>
+              Multiplier: <b>{multiplierText}</b>
+            </div>
           </Card>
 
-          <Card title="Rewards (live)">
-            <div>Pending base: <b>{pendingBaseAnim.toLocaleString(undefined, { maximumFractionDigits: 6 })}</b></div>
-            <div style={{ marginTop: 8 }}>Pending boosted: <b>{pendingRewardsAnim.toLocaleString(undefined, { maximumFractionDigits: 6 })}</b></div>
+          <Card title="Rewards (Smooth)">
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+              <div>
+                <div style={{ opacity: 0.8, fontSize: 12 }}>Pending base</div>
+                <div style={{ fontSize: 18, fontWeight: 950 }}>
+                  {pendingBaseSmooth.toLocaleString(undefined, { maximumFractionDigits: 6 })}
+                </div>
+              </div>
+              <div>
+                <div style={{ opacity: 0.8, fontSize: 12 }}>Pending boosted</div>
+                <div style={{ fontSize: 18, fontWeight: 950 }}>
+                  {pendingBoostSmooth.toLocaleString(undefined, { maximumFractionDigits: 6 })}
+                </div>
+              </div>
+            </div>
           </Card>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 14, marginTop: 14 }}>
+        {/* actions */}
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+            gap: 14,
+            marginTop: 14,
+          }}
+        >
           <Card title="Stake">
             <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
               <div style={{ flex: 1 }}>
-                <Input value={stakeAmt} onChange={(e) => setStakeAmt(e.target.value)} placeholder="Amount" />
-                <div style={{ opacity: 0.7, marginTop: 8, fontSize: 12 }}>
-                  Tip: approve max sekali → stake berkali-kali.
-                </div>
+                <Inp value={stakeAmt} onChange={(e) => setStakeAmt(e.target.value)} placeholder="Amount" />
               </div>
-
-              {!enabled ? (
-                <Button disabled>Locked</Button>
-              ) : !hasAllowance ? (
-                <Button disabled={busy} onClick={approveMax}>
+              {!hasAllowance ? (
+                <Btn disabled={!enabled || busy} onClick={approveMax}>
                   {busy ? 'Processing…' : 'Approve Max'}
-                </Button>
+                </Btn>
               ) : (
-                <Button disabled={busy} onClick={stake}>
+                <Btn disabled={!enabled || busy} onClick={stake}>
                   {busy ? 'Processing…' : 'Stake'}
-                </Button>
+                </Btn>
               )}
+            </div>
+
+            <div style={{ opacity: 0.75, marginTop: 10, fontSize: 12, lineHeight: 1.5 }}>
+              Tip: <b>Approve Max</b> sekali, habis itu stake berkali-kali.
             </div>
           </Card>
 
           <Card title="Claim / Unstake">
-            <div style={{ display: 'flex', gap: 10, marginBottom: 12, alignItems: 'center' }}>
-              <Button disabled={!enabled || busy} onClick={claim}>
+            <div style={{ display: 'flex', gap: 10, marginBottom: 10, alignItems: 'center' }}>
+              <Btn disabled={!enabled || busy} onClick={claim}>
                 {busy ? 'Processing…' : 'Claim'}
-              </Button>
+              </Btn>
 
               {txHash && (
                 <a
-                  href={`${EXPLORER_TX}${txHash}`}
+                  href={`${EXPLORER}/tx/${txHash}`}
                   target="_blank"
                   rel="noreferrer"
-                  style={{ color: 'rgba(255,255,255,0.85)', fontWeight: 800, textDecoration: 'none' }}
+                  style={{ color: 'rgba(0,200,120,1)', fontWeight: 900, textDecoration: 'none' }}
                 >
                   View Tx ↗
                 </a>
@@ -429,13 +459,29 @@ export default function Dashboard() {
 
             <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
               <div style={{ flex: 1 }}>
-                <Input value={unstakeAmt} onChange={(e) => setUnstakeAmt(e.target.value)} placeholder="Amount" />
+                <Inp value={unstakeAmt} onChange={(e) => setUnstakeAmt(e.target.value)} placeholder="Amount" />
               </div>
-              <Button disabled={!enabled || busy} onClick={unstake}>
+              <Btn disabled={!enabled || busy} onClick={unstake}>
                 {busy ? 'Processing…' : 'Unstake'}
-              </Button>
+              </Btn>
             </div>
           </Card>
+        </div>
+
+        {/* footer */}
+        <div
+          style={{
+            marginTop: 18,
+            opacity: 0.75,
+            fontSize: 12,
+            display: 'flex',
+            gap: 12,
+            flexWrap: 'wrap',
+          }}
+        >
+          <span>Token: <code>{TOKEN_ADDRESS}</code></span>
+          <span>NFT: <code>{NFT_ADDRESS}</code></span>
+          <span>Staking: <code>{STAKING_ADDRESS}</code></span>
         </div>
       </div>
     </main>
