@@ -1,13 +1,6 @@
 'use client'
 
-import Dashboard from '../Dashboard'
-
-export default function Page() {
-  return <Dashboard />
-}
-
-import { useEffect, useMemo, useRef, useState } from 'react'
-import Link from 'next/link'
+import { useMemo, useState } from 'react'
 import {
   useAccount,
   useConnect,

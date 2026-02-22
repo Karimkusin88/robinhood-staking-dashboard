@@ -1,8 +1,8 @@
-import dynamic from 'next/dynamic'
+'use client'
 
 export const dynamic = 'force-dynamic'
 
-const Dashboard = dynamic(() => import('../Dashboard'), { ssr: false })
+import Dashboard from '../Dashboard'
 
 export default function Page() {
   return <Dashboard />

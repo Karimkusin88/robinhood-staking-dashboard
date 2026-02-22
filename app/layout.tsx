@@ -1,5 +1,9 @@
 import type { Metadata } from 'next'
-import Providers from './providers'
+import Providers from '../providers'
+
+export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+  return <Providers>{children}</Providers>
+}
 
 export const metadata: Metadata = {
   title: 'Robinhood Staking Dashboard',
