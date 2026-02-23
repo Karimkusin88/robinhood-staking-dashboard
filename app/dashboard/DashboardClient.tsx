@@ -200,7 +200,16 @@ export default function DashboardClient() {
   const allowanceFmt = useMemo(() => {
     const v = allowance.data;
     if (typeof v !== "bigint") return "-";
-    return formatUnits(v, dec);
+  
+    // kalau approve unlimited, tampilkan infinity
+    if (v > maxUint256 / BigInt(2)) return "∞ (Unlimited)";
+  
+    // format normal tapi dipendekin
+    const s = formatUnits(v, dec);
+    const n = Number(s);
+    if (!Number.isFinite(n)) return s;
+  
+    return n.toLocaleString(undefined, { maximumFractionDigits: 6 });
   }, [allowance.data, dec]);
 
   const nftBalFmt = useMemo(() => {
