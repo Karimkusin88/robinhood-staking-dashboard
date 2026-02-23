@@ -1,15 +1,331 @@
 "use client";
 
-import { useAccount } from "wagmi";
+import { useMemo, useState } from "react";
+import {
+  useAccount,
+  useConnect,
+  useDisconnect,
+  useReadContract,
+  useWriteContract,
+  useWaitForTransactionReceipt,
+} from "wagmi";
+import { injected } from "wagmi/connectors";
+import { formatUnits, parseAbi, parseUnits } from "viem";
+import { TOKEN_ADDRESS, NFT_ADDRESS, STAKING_ADDRESS } from "@/lib/constants";
+
+const erc20Abi = parseAbi([
+  "function balanceOf(address) view returns (uint256)",
+  "function allowance(address owner, address spender) view returns (uint256)",
+  "function approve(address spender, uint256 value) returns (bool)",
+  "function decimals() view returns (uint8)",
+]);
+
+const erc721Abi = parseAbi(["function balanceOf(address) view returns (uint256)"]);
+
+const stakingAbi = parseAbi([
+  "function stake(uint256 amount)",
+  "function unstake(uint256 amount)",
+  "function claim()",
+  "function userInfo(address) view returns (uint256 amount, uint256 rewardDebt)",
+  "function pendingRewards(address) view returns (uint256)",
+]);
+
+function Card({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div
+      style={{
+        border: "1px solid rgba(255,255,255,0.12)",
+        borderRadius: 14,
+        padding: 16,
+        background: "rgba(255,255,255,0.03)",
+      }}
+    >
+      <div style={{ fontWeight: 700, marginBottom: 10 }}>{title}</div>
+      {children}
+    </div>
+  );
+}
 
 export default function DashboardClient() {
   const { address, isConnected } = useAccount();
+  const { connect, isPending: isConnecting } = useConnect();
+  const { disconnect } = useDisconnect();
+
+  const [amount, setAmount] = useState<string>("");
+
+  // decimals
+  const { data: decimalsData } = useReadContract({
+    address: TOKEN_ADDRESS,
+    abi: erc20Abi,
+    functionName: "decimals",
+    query: { enabled: true },
+  });
+  const decimals = Number(decimalsData ?? 18);
+
+  const { data: tokenBal } = useReadContract({
+    address: TOKEN_ADDRESS,
+    abi: erc20Abi,
+    functionName: "balanceOf",
+    args: address ? [address] : undefined,
+    query: { enabled: Boolean(address) },
+  });
+
+  const { data: allowance } = useReadContract({
+    address: TOKEN_ADDRESS,
+    abi: erc20Abi,
+    functionName: "allowance",
+    args: address ? [address, STAKING_ADDRESS] : undefined,
+    query: { enabled: Boolean(address) },
+  });
+
+  const { data: nftBal } = useReadContract({
+    address: NFT_ADDRESS,
+    abi: erc721Abi,
+    functionName: "balanceOf",
+    args: address ? [address] : undefined,
+    query: { enabled: Boolean(address) },
+  });
+
+  const { data: userInfo } = useReadContract({
+    address: STAKING_ADDRESS,
+    abi: stakingAbi,
+    functionName: "userInfo",
+    args: address ? [address] : undefined,
+    query: { enabled: Boolean(address) },
+  });
+
+  const { data: pendingRewards } = useReadContract({
+    address: STAKING_ADDRESS,
+    abi: stakingAbi,
+    functionName: "pendingRewards",
+    args: address ? [address] : undefined,
+    query: { enabled: Boolean(address) },
+  });
+
+  const parsedAmount = useMemo(() => {
+    try {
+      if (!amount) return 0n;
+      return parseUnits(amount, decimals);
+    } catch {
+      return 0n;
+    }
+  }, [amount, decimals]);
+
+  const needsApprove = useMemo(() => {
+    if (!parsedAmount) return false;
+    return (allowance ?? 0n) < parsedAmount;
+  }, [allowance, parsedAmount]);
+
+  const {
+    writeContract,
+    data: txHash,
+    isPending: isWriting,
+    error: writeError,
+  } = useWriteContract();
+
+  const { isLoading: isTxPending, isSuccess: isTxSuccess } = useWaitForTransactionReceipt({
+    hash: txHash,
+  });
+
+  const busy = isWriting || isTxPending;
+
+  const onConnect = () => connect({ connector: injected() });
+
+  const onApprove = () => {
+    if (!parsedAmount) return;
+    writeContract({
+      address: TOKEN_ADDRESS,
+      abi: erc20Abi,
+      functionName: "approve",
+      args: [STAKING_ADDRESS, parsedAmount],
+    });
+  };
+
+  const onStake = () => {
+    if (!parsedAmount) return;
+    writeContract({
+      address: STAKING_ADDRESS,
+      abi: stakingAbi,
+      functionName: "stake",
+      args: [parsedAmount],
+    });
+  };
+
+  const onUnstake = () => {
+    if (!parsedAmount) return;
+    writeContract({
+      address: STAKING_ADDRESS,
+      abi: stakingAbi,
+      functionName: "unstake",
+      args: [parsedAmount],
+    });
+  };
+
+  const onClaim = () => {
+    writeContract({
+      address: STAKING_ADDRESS,
+      abi: stakingAbi,
+      functionName: "claim",
+      args: [],
+    });
+  };
 
   return (
-    <main style={{ padding: 24 }}>
-      <h1>NFT Boost Staking Dashboard</h1>
-      <div style={{ marginTop: 12 }}>
-        {isConnected ? <div>Connected: {address}</div> : <div>Not connected</div>}
+    <main style={{ padding: 24, maxWidth: 980, margin: "0 auto" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+        <div>
+          <h1 style={{ margin: 0, fontSize: 26 }}>NFT-Boosted Staking Dashboard</h1>
+          <div style={{ opacity: 0.75, marginTop: 6 }}>Robinhood Testnet</div>
+        </div>
+
+        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          {isConnected ? (
+            <>
+              <div style={{ fontFamily: "monospace", fontSize: 12, opacity: 0.85 }}>
+                {address?.slice(0, 6)}...{address?.slice(-4)}
+              </div>
+              <button
+                onClick={() => disconnect()}
+                style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.18)", background: "transparent", color: "inherit" }}
+              >
+                Disconnect
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={onConnect}
+              disabled={isConnecting}
+              style={{ padding: "10px 12px", borderRadius: 10, border: 0, background: "rgba(255,255,255,0.14)", color: "inherit" }}
+            >
+              {isConnecting ? "Connecting..." : "Connect Wallet"}
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div style={{ marginTop: 18, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+        <Card title="Balances">
+          <div style={{ display: "grid", gap: 6 }}>
+            <div>
+              Token:{" "}
+              <b>
+                {tokenBal !== undefined ? formatUnits(tokenBal, decimals) : "-"}
+              </b>
+            </div>
+            <div>
+              NFT: <b>{nftBal !== undefined ? nftBal.toString() : "-"}</b>
+            </div>
+          </div>
+        </Card>
+
+        <Card title="Staked">
+          <div style={{ display: "grid", gap: 6 }}>
+            <div>
+              Amount:{" "}
+              <b>
+                {userInfo ? formatUnits(userInfo[0] as bigint, decimals) : "-"}
+              </b>
+            </div>
+            <div>
+              Pending:{" "}
+              <b>
+                {pendingRewards !== undefined ? formatUnits(pendingRewards, decimals) : "-"}
+              </b>
+            </div>
+          </div>
+        </Card>
+
+        <Card title="Allowance">
+          <div style={{ display: "grid", gap: 6 }}>
+            <div>
+              Approved:{" "}
+              <b>
+                {allowance !== undefined ? formatUnits(allowance, decimals) : "-"}
+              </b>
+            </div>
+            <div style={{ fontSize: 12, opacity: 0.75 }}>
+              Approve hanya perlu kalau allowance &lt; amount yang mau distake.
+            </div>
+          </div>
+        </Card>
+      </div>
+
+      <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <Card title="Actions">
+          <div style={{ display: "grid", gap: 10 }}>
+            <label style={{ display: "grid", gap: 6 }}>
+              <span style={{ fontSize: 12, opacity: 0.8 }}>Amount</span>
+              <input
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                placeholder={`0.0`}
+                inputMode="decimal"
+                style={{
+                  padding: "10px 12px",
+                  borderRadius: 10,
+                  border: "1px solid rgba(255,255,255,0.18)",
+                  background: "transparent",
+                  color: "inherit",
+                }}
+              />
+            </label>
+
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <button
+                onClick={onApprove}
+                disabled={!isConnected || busy || !parsedAmount || !needsApprove}
+                style={{ padding: "10px 12px", borderRadius: 10, border: 0, background: "rgba(255,255,255,0.14)", color: "inherit" }}
+              >
+                Approve
+              </button>
+
+              <button
+                onClick={onStake}
+                disabled={!isConnected || busy || !parsedAmount || needsApprove}
+                style={{ padding: "10px 12px", borderRadius: 10, border: 0, background: "rgba(255,255,255,0.14)", color: "inherit" }}
+              >
+                Stake
+              </button>
+
+              <button
+                onClick={onUnstake}
+                disabled={!isConnected || busy || !parsedAmount}
+                style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.18)", background: "transparent", color: "inherit" }}
+              >
+                Unstake
+              </button>
+
+              <button
+                onClick={onClaim}
+                disabled={!isConnected || busy}
+                style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.18)", background: "transparent", color: "inherit" }}
+              >
+                Claim
+              </button>
+            </div>
+
+            {writeError ? (
+              <div style={{ color: "#ff8a8a", fontSize: 12 }}>
+                {writeError.message}
+              </div>
+            ) : null}
+
+            {txHash ? (
+              <div style={{ fontSize: 12, opacity: 0.85, fontFamily: "monospace" }}>
+                Tx: {txHash.slice(0, 10)}...{txHash.slice(-8)}{" "}
+                {isTxPending ? "(pending)" : isTxSuccess ? "(confirmed)" : ""}
+              </div>
+            ) : null}
+          </div>
+        </Card>
+
+        <Card title="Notes">
+          <div style={{ display: "grid", gap: 8, fontSize: 13, opacity: 0.85 }}>
+            <div>• Kalau tombol Stake disabled, biasanya karena butuh Approve dulu.</div>
+            <div>• NFT balance &gt; 0 = nanti bisa dipakai buat logika boost (kalau contract-nya support).</div>
+            <div>• Kalau claim/stake error, kirim screenshot error-nya ke gue, kita betulin cepat.</div>
+          </div>
+        </Card>
       </div>
     </main>
   );
