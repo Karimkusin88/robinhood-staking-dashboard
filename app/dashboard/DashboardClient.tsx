@@ -197,12 +197,13 @@ export default function DashboardClient() {
     return formatUnits(v, dec);
   }, [tokenBalance.data, dec]);
 
+  const MaxUint256 = (BigInt(1) << BigInt(256)) - BigInt(1);
   const allowanceFmt = useMemo(() => {
     const v = allowance.data;
     if (typeof v !== "bigint") return "-";
   
     // kalau approve unlimited, tampilkan infinity
-    if (v > maxUint256 / BigInt(2)) return "∞ (Unlimited)";
+    if (v > MaxUint256 / BigInt(2)) return "∞ (Unlimited)";
   
     // format normal tapi dipendekin
     const s = formatUnits(v, dec);
@@ -210,7 +211,7 @@ export default function DashboardClient() {
     if (!Number.isFinite(n)) return s;
   
     return n.toLocaleString(undefined, { maximumFractionDigits: 6 });
-  }, [allowance.data, dec]);
+  }, [allowance.data, dec, MaxUint256]);
 
   const nftBalFmt = useMemo(() => {
     const v = nftBalance.data;
