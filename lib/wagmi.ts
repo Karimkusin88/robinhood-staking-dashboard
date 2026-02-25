@@ -1,5 +1,5 @@
 import { createConfig, http } from "wagmi";
-import { injected } from "wagmi/connectors";
+import { injected, walletConnect } from "wagmi/connectors";
 
 export const robinhoodTestnet = {
   id: 46630,
@@ -8,11 +8,19 @@ export const robinhoodTestnet = {
   rpcUrls: { default: { http: ["https://rpc.testnet.chain.robinhood.com"] } },
 } as const;
 
+const projectId = process.env.NEXT_PUBLIC_WC_PROJECT_ID!;
+
 export const config = createConfig({
   chains: [robinhoodTestnet],
   transports: {
     [robinhoodTestnet.id]: http(robinhoodTestnet.rpcUrls.default.http[0]),
   },
-  connectors: [injected()],
+  connectors: [
+    injected(),
+    walletConnect({
+      projectId,
+      showQrModal: true,
+    }),
+  ],
   ssr: true,
 });
