@@ -11,7 +11,7 @@ import {
   useWriteContract,
   useBlockNumber,
 } from "wagmi";
-import { injected } from "wagmi/connectors";
+import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { formatUnits, parseAbi, parseUnits } from "viem";
 import { TOKEN_ADDRESS, NFT_ADDRESS, STAKING_ADDRESS, FAUCET_ADDRESS } from "@/lib/constants";
 
@@ -241,18 +241,7 @@ export default function DashboardClient() {
                </button>
             )}
 
-            {isConnected ? (
-              <div className="flex items-center gap-2 ml-2">
-                <span className="rounded-xl bg-white/5 px-4 py-2 text-sm font-mono text-white/80 ring-1 ring-white/10">{shortAddr(address)}</span>
-                <button onClick={() => disconnect()} disabled={busy} className="rounded-xl bg-red-500/10 p-2.5 text-red-400 ring-1 ring-red-500/20 hover:bg-red-500/20 transition">
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
-                </button>
-              </div>
-            ) : (
-              <Button onClick={() => connect({ connector: injected() })} disabled={busy} className="h-10 ml-2">
-                {isConnecting ? "Connecting…" : "Connect Wallet"}
-              </Button>
-            )}
+            <ConnectButton />
           </div>
         </div>
 
